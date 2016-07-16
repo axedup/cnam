@@ -67,10 +67,23 @@ zn.kriged["var1.pred"]
 writeOGR(obj=zn.kriged, dsn="F:/CNAM/Sta112/sortie/euh", layer="kriged", driver="ESRI Shapefile")
 
 #Cross validation:
+points_red<-points[1:1000,]
 
-points_cv<-data.frame(points$X,points$Y,points$Zn)
-cv_ok<- krige.cv(sqrt(points.Zn)~1,data=points_cv, locations=~ points.X+points.Y, 
-                 model=var_cd.fit,nfold=nrow(points_cv)) 
+var_cd_red = variogram(Zn~1, points_red)
+plot(var_cd_red )
+var_cd_red.fit = fit.variogram( var_cd_red, model = vgm(15000, "Sph", range=40000, nugget=10000)) # range c'est le plateau
+
+
+points_cv_red<-data.frame(points$X[1:1000],points$Y[1:1000],points$Zn[1:1000])
+cv_ok_red<- krige.cv(sqrt(points.Zn.1.1000.)~1,data=points_cv_red, locations=~ points.X.1.1000.+points.Y.1.1000., 
+                 model=var_cd.fit,nfold=nrow(points_cv_red)) 
+
+
+
+
+points_cv_red2<-data.frame(points$X[1:2000],points$Y[1:2000],points$Zn[1:2000])
+cv_ok_red2<- krige.cv(sqrt(points.Zn.1.2000.)~1,data=points_cv_red2, locations=~ points.X.1.2000.+points.Y.1.2000., 
+                     model=var_cd.fit,nfold=nrow(points_cv_red2)) 
 
 
 ### krigeage avec moyenne locale variable
