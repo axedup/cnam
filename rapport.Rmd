@@ -1,0 +1,199 @@
+---
+title: "Projet CNAM STA 112- Données spatiales"
+author: "Axelle Dupont"
+date: "16 juillet 2016"
+output: html_document
+---
+
+* Chargement des packages :
+
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+load(F:/CNAM/Sta112/projet/envir1607.RData)
+```
+
+```{r,message=FALSE,warning=FALSE}
+library(rgdal)
+
+library(gstat)
+library(sp)
+```
+
+
+* La première étape est l'import des données : 
+
+```{r,results='hide'}
+points <- readOGR(dsn=path.expand("F:/CNAM/Sta112/projet/Donnees"),layer="Pt_Zn", stringsAsFactors=TRUE)
+ str(points)
+ plot(points)
+ plot(points$Zn)
+commune <- readOGR(dsn=path.expand("F:/CNAM/Sta112/projet/Donnees"),layer="Commune_Zn", stringsAsFactors=TRUE)
+ str(commune)
+ plot(commune)
+ proj4string(commune)
+ proj4string(points) 
+ grille<-readOGR(dsn=path.expand("F:/CNAM/Sta112/projet/Donnees"),layer="Grille_projetCNAM", stringsAsFactors=TRUE)
+head(grille) 
+proj4string(grille) 
+
+```
+![](carte_points.png)
+![](carte_commune.png)
+
+* Le système de coordonnées des données  points et communes est `r proj4string(points)` alors que celui de la grille de validation est `r proj4string(grille)`. Il est nécessaire de changer le SCR : 
+
+```{r, eval=FALSE}
+grille <- spTransform( grille, CRS("+proj=lcc +lat_1=45.898918964419 +lat_2=47.696014502038 +lat_0=46.8 +lon_0=2.337229104484 +x_0=600000 +y_0=2200000 +ellps=clrk80 +units=m +no_defs")) 
+ 
+```
+
+* Transformation nécessaire pour rendre la distribution de la concentration en Zinc aux points de mesure :
+Pour cela, une représentation graphique de la densité est réalisée avec ou non une transformation. 
+
+
+```{r}
+par(mfrow=c(2,2))
+d<-density(points$Zn)
+ plot(d)
+ #hist(points$Zn,density = TRUE,freq=FALSE)
+ #hist(log(points$Zn),density=TRUE,freq=FALSE)
+ 
+ dl<-density(log(points$Zn))
+ plot(dl) 
+ 
+ ds<-density(sqrt(points$Zn)) ### c'est le mieux 
+ plot(ds) 
+ 
+ dsi<-density(1/sqrt(points$Zn))
+ plot(dsi) 
+
+```
+
+La transformation racine carrée permet d'avoir la distribution la plus normale.
+
+*  On trace ensuite le variogramme expérimental
+
+```{r}
+ points$sqzn<-sqrt(points$Zn)
+   
+ var_cd = variogram(sqzn~1, points)
+
+ par(mfrow=c(1,1))
+ 
+ plot(var_cd,main="Variogramme expérimental")
+```
+
+Devant ve variogramme expérimental, on fitte un variogramme théorique :
+
+```{r}
+var_cd.fit = fit.variogram( var_cd, model = vgm(15000, "Sph", range=40000, nugget=10000)) 
+ 
+ # effet pépite estimée à 10000
+ # range (plage) estimé à 40000
+ # seuil estimé à 15000
+ # distribution sphérique
+
+plot(var_cd,var_cd.fit)
+```
+
+Le variogramme théorique étant réalisé de manière satisfaisante, on peut réalisé le krigeage ordinaire.
+
+```{r,eval=FALSE}
+zn.kriged = krige(sqrt(Zn)~1, points, grille, model = var_cd.fit)
+
+```
+On peut cartographier les résultats du krigrage.
+
+![](krige.png)
+
+* Pour tenir compte des valeurs de concentration de Zn au niveau des communes on peut alors procéder à un krigeage avec une moyenne locale variable.
+
+On réalise d'abord le krigeage des valeurs des communes sur la grille :
+```{r}
+dl<-density(commune$Zn)
+ plot(dl)
+```
+
+La distribution peut être considéré comme normale.
+
+On trace le variogramme expérimental et théorique de ces valeurs 
+```{r}
+comm = variogram(Zn~1, commune)
+
+ par(mfrow=c(1,1))
+
+ plot(comm,,main="Variogramme expérimental")
+ 
+comm.fit = fit.variogram(comm, model = vgm(var(commune$Zn), "Sph", range=40000, nugget=2.0e+10)) 
+
+plot(comm,comm.fit)
+
+```
+
+
+Puis on réalise le krigeage :
+
+```{r,eval=FALSE}
+comm.gr.kriged = krige(Zn~1, commune, grille, model = comm.fit) 
+
+```
+
+On répète l'opération mais en krigeant sur les points de mesure.
+
+```{r,eval=FALSE}
+comm.gr.kriged = krige(Zn~1, commune, grille, model = comm.fit) 
+
+```
+
+On peut alors calculer les résidus :
+
+```{r}
+points$res<-points$Zn- comm.kriged["var1.pred"]$var1.pred
+dl<-density(points$res)
+ plot(dl) 
+```
+
+Ceux-ci semblent avoir une distribution normale. Il faut alors réliser un krigeage simple sur les points de la grille.
+
+```{r}
+res.var = variogram(res~1, points)
+plot(res.var,main="Variogramme expérimental des résidus")
+
+res.var.fit = fit.variogram(res.var, model=vgm(var(points$res), "Sph", range=35000, nugget=2.0e+10)) # range c'est le plateau
+
+plot(res.var,res.var.fit)
+
+```
+
+```{r,eval=FALSE}
+res.kriged=krige(res~1, points, grille, model = res.var.fit,beta=14770) 
+
+```
+
+Pour obtenir les estimations de la mesure en Zn sur les points de la grille, il faut alors sommer les valeurs obtenus par le krigeage précédent et les valeurs des concentrations moyennes des communes krigées sur la grille.
+
+Pour pouvoir cartographier les résultats, on attribue un CRS à la base obtenue.
+```{r,eval=FALSE}
+total<-res.kriged$var1.pred+ comm.gr.kriged$var1.pred
+
+
+fin<-as.data.frame(cbind(res.kriged$x,res.kriged$y,total))
+colnames(fin)<-c("x","y","total")
+head(fin)
+fin.grid<-fin
+
+coordinates(fin.grid)= cbind(fin.grid$x,fin.grid$y)
+proj4string(fin.grid) = CRS("+proj=lcc +lat_1=45.898918964419 +lat_2=47.696014502038 +lat_0=46.8
++lon_0=2.337229104484 +x_0=600000 +y_0=2200000 +ellps=clrk80 +units=m
++no_defs")
+
+```
+![](krige_moy.png)
+
+* Validation par LOOCV
+
+```{r,eval=FALSE}
+cv_ok<- krige.cv(sqrt(points.Zn)~1,data=points_cv, locations=~ points.X+points.Y,
++ model=var_cd.fit,nfold=nrow(points_cv))
+```
+
+On calcule la moyenne des z scores obtenu à chaque boucle. 

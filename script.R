@@ -119,7 +119,7 @@ par(mfrow=c(1,1))
 mean(points$res)
 
 res.var = variogram(res~1, points)
-plot(res.var)
+plot(res.var,main="Variogramme expérimental des résidus")
 
  
 res.var.fit = fit.variogram(res.var, model $$= vgm(var(points$res), "Sph", range=35000, nugget=2.0e+10)) # range c'est le plateau
