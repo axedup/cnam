@@ -1,0 +1,141 @@
+---
+title: 'Sta 112 : Données longitudinales'
+author: "Axelle Dupont"
+date: "30 juillet 2016"
+output: html_document
+---
+Chargement des données
+
+```{r,warning=FALSE,message=FALSE}
+library(lme4)
+library(mice)
+library(ggplot2)
+library(lattice)
+load("F:/CNAM/Sta112/projet/STA112_LONG2.RData")
+```
+
+Première description du jeu de données :
+```{r}
+str(data3)
+md.pattern(data3)
+```
+Seules les valeurs de l'évaluation au bout de 4 ans sont manquantes.
+
+Transformation des données au format long :
+```{r}
+data3l<-reshape(data3,varying = c("eval.1","eval.2","eval.3","eval.4"),direction = "long")
+head(data3l)
+```
+
+
+```{r}
+ggplot(data = data3l, aes(x = time,y=eval,group=id,colour=id))+ geom_line()+ scale_colour_distiller(palette = "RdGy") + theme(legend.position="none")
+```
+
+* On teste un modèle avec un intercept et un pente (temps) en effet aléatoire : 
+
+
+```{r}
+a<-lmer(eval~Sex + Langue + Pauvrete + Assi +  (1+ time|id),data=data3l,REML=FALSE)
+summary(a)
+
+```
+On peut également tester une interaction entre le temps et l'assiduité en effet fixe. 
+
+```{r}
+c<-lmer(eval~Sex + Langue + Pauvrete + Assi + time*Assi + (1+ time|id),data=data3l,REML=FALSE)
+summary(c)
+```
+
+* Si l'on effectue un test de comparaison de vraisemblance : 
+
+```{r}
+anova(a,c)
+```
+
+Le test n'étant pas significatif, nous choisirons le modèle le plus simple, sans interactions.
+
+```{r}
+ab<-lmer(eval~Sex + Langue + Pauvrete + Assi + (1+ time|id),data=data3l,REML=TRUE)
+summary(ab)
+
+```
+
+
+* Vérification du modèle : 
+
+```{r}
+qqnorm(residuals(ab))
+plot(density((residuals(ab))))
+plot(ab,type=c("p","smooth")) ## fitted vs residual
+```
+
+Les résidus sont distribués normalement et aléatoirement selon les valeurs estimées.
+
+* Imputation multiple
+
+On exclut de la matrice des prédicteurs l'identifiant des patients. Les évaluations manquantes seront imutées par predictive mean matching.
+
+```{r}
+ini <- mice(data3l, maxit = 0, pri = FALSE)
+pred<-ini$pred
+pred[,"id"]<-0
+pred
+
+meth<-ini$meth
+
+imput<- mice(data3l, pred=pred, meth=meth,seed=123)
+
+```
+
+5 jeux de données ont été imputés, nous faisons les analyses sur chaque jeux de données imputées
+
+
+```{r}
+fit<-with(imput,lmer(eval~Sex + Langue + Pauvrete + Assi +(1+ time|id),REML=TRUE))
+
+```
+Ces résultats doivent être poolés.
+
+```{r}
+summary(pool(fit))
+```
+
+
+
+
+library(Amelia)
+library(lme4)
+library(merTools)
+library(plyr)
+
+ a.out <- amelia(data3l, idvars = "id", noms = c("Sex","Langue","Pauvrete","Assi"), m = 10)
+ mods <- lapply(a.out$imputations,function(d) lmer(eval ~ Sex+ Langue + Pauvrete +  Assi+ time+ Assi*time + (1+time|id), data = d))
+
+imputeFEs <- ldply(mods, FEsim,n.sims = 1000)
+imputeREs <- ldply(fit, REsim,n.sims = 1000)
+
+imputeREs <- ddply(imputeREs, c("term"), summarize, mean = mean(mean), 
+               median = mean(median), sd = mean(sd))
+
+imputeFEs <- ddply(imputeFEs, c("term"),summarize, meanEff = mean(mean), 
+               medEff = mean(median), sdEff = mean(sd))
+
+
+REsdExtract <- function(model){
+  out <- unlist(lapply(VarCorr(model), attr, "stddev"))
+  return(out)
+}
+
+REcorrExtract <- function(model){
+  out <- unlist(lapply(VarCorr(model), attr, "corre"))
+  return(min(unique(out)))
+}
+
+
+
+modStats <- cbind(ldply(mods, REsdExtract), ldply(mods, REcorrExtract))
+
+
+
+

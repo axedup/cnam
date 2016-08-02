@@ -8,7 +8,7 @@ output: html_document
 * Chargement des packages :
 
 ```{r,echo=FALSE,message=FALSE,warning=FALSE}
-load(F:/CNAM/Sta112/projet/envir1607.RData)
+load("F:/CNAM/Sta112/projet/envir1607.RData")
 ```
 
 ```{r,message=FALSE,warning=FALSE}
@@ -24,11 +24,10 @@ library(sp)
 ```{r,results='hide'}
 points <- readOGR(dsn=path.expand("F:/CNAM/Sta112/projet/Donnees"),layer="Pt_Zn", stringsAsFactors=TRUE)
  str(points)
- plot(points)
- plot(points$Zn)
+
 commune <- readOGR(dsn=path.expand("F:/CNAM/Sta112/projet/Donnees"),layer="Commune_Zn", stringsAsFactors=TRUE)
  str(commune)
- plot(commune)
+
  proj4string(commune)
  proj4string(points) 
  grille<-readOGR(dsn=path.expand("F:/CNAM/Sta112/projet/Donnees"),layer="Grille_projetCNAM", stringsAsFactors=TRUE)
@@ -140,11 +139,12 @@ comm.gr.kriged = krige(Zn~1, commune, grille, model = comm.fit)
 On répète l'opération mais en krigeant sur les points de mesure.
 
 ```{r,eval=FALSE}
-comm.gr.kriged = krige(Zn~1, commune, grille, model = comm.fit) 
+comm.kriged = krige(Zn~1, commune, points, model = comm.fit) 
+
 
 ```
 
-On peut alors calculer les résidus :
+On peut alors calculer les résidus aux points de mesure :
 
 ```{r}
 points$res<-points$Zn- comm.kriged["var1.pred"]$var1.pred
@@ -171,7 +171,7 @@ res.kriged=krige(res~1, points, grille, model = res.var.fit,beta=14770)
 
 Pour obtenir les estimations de la mesure en Zn sur les points de la grille, il faut alors sommer les valeurs obtenus par le krigeage précédent et les valeurs des concentrations moyennes des communes krigées sur la grille.
 
-Pour pouvoir cartographier les résultats, on attribue un CRS à la base obtenue.
+Pour pouvoir cartographier les résultats, on le transforme en objet spatial avec un système de coordonnées.
 ```{r,eval=FALSE}
 total<-res.kriged$var1.pred+ comm.gr.kriged$var1.pred
 
